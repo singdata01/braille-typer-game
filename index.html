@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Braille Typer: Storyteller Customizable</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Sarabun', sans-serif;
+            background-color: #f0f9ff;
+            overflow: hidden;
+        }
+
+        .dot { transition: all 0.1s ease; }
+        .dot.active {
+            background-color: #2563eb;
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(37, 99, 235, 0.5);
+            border-color: #60a5fa;
+        }
+
+        .world-item { animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        :focus { outline: 3px solid #f59e0b; outline-offset: 2px; }
+
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(5px);
+        }
+
+        .story-text {
+            line-height: 1.8;
+            text-indent: 2rem;
+            font-size: 1.1rem;
+            text-align: justify;
+        }
+        
+        /* Settings Panel Transition */
+        #settings-panel {
+            transition: transform 0.3s ease-in-out;
+        }
+        #settings-panel.closed {
+            transform: translateX(100%);
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center justify-between p-4 select-none relative overflow-hidden">
+
+    <div id="sr-announcer" aria-live="assertive" class="sr-only"></div>
+
+    <!-- Settings Button -->
+    <button onclick="app.toggleSettings()" class="absolute top-4 right-4 z-50 bg-gray-200 hover:bg-gray-300 text-gray-600 p-2 rounded-full shadow-md">
+        <i class="fas fa-cog text-xl"></i>
+    </button>
+
+    <!-- Sound Settings Panel (Slide-in) -->
+    <div id="settings-panel" class="absolute top-0 right-0 h-full w-80 bg-white shadow-2xl z-40 p-6 border-l-4 border-blue-500 closed flex flex-col">
+        <h2 class="text-xl font-bold text-gray-800 mb-4 mt-12"><i class="fas fa-sliders-h mr-2"></i>ตั้งค่าเสียง (Sound Config)</h2>
+        
+        <div class="mb-6">
+            <label class="block text-gray-700 text-sm font-bold mb-2">ระดับเสียงปุ่มกด (Dot Pitch)</label>
+            <input type="range" id="dot-pitch" min="200" max="1000" value="600" class="w-full accent-blue-600" oninput="app.updateSoundConfig('dotFreq', this.value)">
+            <div class="flex justify-between text-xs text-gray-500">
+                <span>ทุ้ม (Low)</span>
+                <span id="dot-pitch-val">600Hz</span>
+                <span>แหลม (High)</span>
+            </div>
+        </div>
+
+        <div class="mb-6">
+            <label class="block text-gray-700 text-sm font-bold mb-2">ชนิดเสียง (Waveform)</label>
+            <div class="flex gap-2">
+                <button onclick="app.setWaveform('sine')" class="flex-1 py-2 rounded bg-blue-100 hover:bg-blue-200 text-xs font-bold border border-blue-300">Numpad</button>
+                <button onclick="app.setWaveform('triangle')" class="flex-1 py-2 rounded bg-gray-100 hover:bg-gray-200 text-xs font-bold border border-gray-300">Game</button>
+                <button onclick="app.setWaveform('square')" class="flex-1 py-2 rounded bg-gray-100 hover:bg-gray-200 text-xs font-bold border border-gray-300">Retro</button>
+            </div>
+        </div>
+
+        <div class="mt-auto">
+            <button onclick="app.playSound('dot')" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded mb-2">
+                <i class="fas fa-play mr-2"></i> ทดสอบเสียง
+            </button>
+            <button onclick="app.toggleSettings()" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">
+                ปิดหน้าต่าง
+            </button>
+        </div>
+    </div>
+
+    <!-- Welcome Screen -->
+    <div id="welcome-screen" class="fixed inset-0 z-[30] bg-white flex flex-col items-center justify-center">
+        <div class="bg-blue-50 p-10 rounded-3xl shadow-xl text-center border-4 border-blue-200 max-w-lg w-full">
+            <h1 class="text-4xl font-bold text-blue-800 mb-2">Braille Typer</h1>
+            <p class="text-gray-500 mb-8">สื่อการเรียนรู้อักษรเบรลล์</p>
+            
+            <div class="mb-6 text-left">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="student-name">
+                    ชื่อเล่นนักเรียน:
+                </label>
+                <input class="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline text-xl" 
+                       id="student-name" type="text" placeholder="กรอกชื่อเล่น...">
+            </div>
+
+            <button onclick="app.prepareGame()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-full shadow-lg transform hover:scale-105 transition-all text-xl">
+                <i class="fas fa-play mr-2"></i> เริ่มเกมส์ (ครูกดปุ่มนี้)
+            </button>
+            <p class="mt-4 text-xs text-gray-400">ระบบจะหน่วงเวลา 3 วินาทีหลังกด เพื่อให้เตรียม Focus Mode</p>
+        </div>
+    </div>
+
+    <!-- Success Popup -->
+    <div id="message-popup" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="modal-content bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-full text-center border-4 border-blue-500">
+            <i class="fas fa-check-circle text-6xl text-green-500 mb-4"></i>
+            <h2 id="popup-text" class="text-3xl font-bold text-gray-800 mb-2"></h2>
+        </div>
+    </div>
+
+    <!-- Game Over / Story Screen -->
+    <div id="game-over-screen" class="modal-overlay fixed inset-0 z-[60] flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-3xl w-full text-center border-4 border-purple-500 max-h-[90vh] overflow-y-auto flex flex-col">
+            
+            <div id="end-header" class="flex-shrink-0">
+                <i class="fas fa-trophy text-5xl text-yellow-500 mb-4"></i>
+                <h2 id="end-title" class="text-3xl font-bold text-gray-800 mb-2">เก่งมาก!</h2>
+                <p id="end-desc" class="text-lg text-gray-600 mb-6">ผ่านการทดสอบทั้งหมดแล้วครับ</p>
+            </div>
+
+            <div class="bg-yellow-50 p-6 rounded-xl border-2 border-yellow-200 mb-6 text-left relative overflow-hidden flex-grow overflow-y-auto">
+                <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-book-open text-6xl text-yellow-600"></i></div>
+                <h3 class="text-2xl font-bold text-yellow-800 mb-4 border-b-2 border-yellow-200 pb-2"><i class="fas fa-book mr-2"></i>นิทานรางวัล: <span id="story-title">...</span></h3>
+                <p id="story-content" class="story-text text-gray-800">...</p>
+                <p class="text-right text-sm text-yellow-700 mt-6 font-bold italic">--- นิทานอีสป ---</p>
+            </div>
+
+            <div class="flex justify-center gap-4 flex-shrink-0">
+                <button onclick="app.resetToMenu()" class="bg-gray-500 hover:bg-gray-600 text-white text-lg font-bold py-3 px-6 rounded-lg">
+                    กลับเมนูหลัก
+                </button>
+                <button onclick="app.startGame()" class="bg-blue-600 hover:bg-blue-700 text-white text-xl font-bold py-3 px-8 rounded-full shadow-lg transform hover:scale-105 transition-all">
+                    เล่นอีกครั้ง (Spacebar)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="w-full max-w-5xl flex justify-between items-center mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-100">
+        <div class="flex flex-col">
+            <h1 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                Braille Typer 
+                <span id="level-badge" class="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">Level 1</span>
+            </h1>
+            <p class="text-xs text-gray-500 mt-1">
+                น้อง: <span id="display-name" class="font-bold text-blue-600">-</span> | ข้อที่ <span id="progress-text">1/5</span>
+            </p>
+        </div>
+        
+        <div class="flex gap-3 items-center">
+            <button onclick="app.setMode('sequential')" class="bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded text-blue-700 text-sm font-medium">มือใหม่</button>
+            <button onclick="app.setMode('simultaneous')" class="bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded text-purple-700 text-sm font-medium">มือโปร</button>
+        </div>
+    </header>
+
+    <!-- Main Game Area -->
+    <main class="flex-grow w-full max-w-4xl bg-white rounded-xl shadow-lg border-b-4 border-gray-200 overflow-hidden relative flex flex-col mt-2">
+        <div class="absolute inset-0 z-0 bg-gradient-to-b from-blue-200 to-green-100 opacity-50"></div>
+        
+        <div class="z-10 flex flex-col items-center justify-center h-full p-6">
+            <div id="question-area" class="mb-6 text-center">
+                <p id="instruction-text" class="text-gray-500 mb-2">โจทย์ตัวอักษร:</p>
+                <div id="target-char" class="text-8xl font-bold text-gray-800 bounce filter drop-shadow-sm mb-4">...</div>
+                
+                <div id="target-braille-hint" class="flex gap-3 justify-center bg-gray-100/80 py-2 px-4 rounded-full transition-opacity duration-300 min-h-[40px]">
+                    <!-- Dots will be injected here -->
+                </div>
+            </div>
+
+            <!-- Braille Cells (Visual Layout Updated) -->
+            <div class="bg-gray-800 p-6 rounded-3xl shadow-2xl mb-8 border-4 border-gray-700 inline-block">
+                <div class="flex justify-center gap-3">
+                    <!-- Left Column (1, 2, 3) -->
+                    <div class="flex flex-col gap-2">
+                        <div id="dot-1" class="dot w-16 h-16 rounded-full bg-gray-600 border-4 border-gray-500 flex items-center justify-center text-white font-bold text-2xl shadow-inner" data-key="7">1</div>
+                        <div id="dot-2" class="dot w-16 h-16 rounded-full bg-gray-600 border-4 border-gray-500 flex items-center justify-center text-white font-bold text-2xl shadow-inner" data-key="4">2</div>
+                        <div id="dot-3" class="dot w-16 h-16 rounded-full bg-gray-600 border-4 border-gray-500 flex items-center justify-center text-white font-bold text-2xl shadow-inner" data-key="1">3</div>
+                    </div>
+                    <!-- Right Column (4, 5, 6) -->
+                    <div class="flex flex-col gap-2">
+                        <div id="dot-4" class="dot w-16 h-16 rounded-full bg-gray-600 border-4 border-gray-500 flex items-center justify-center text-white font-bold text-2xl shadow-inner" data-key="9">4</div>
+                        <div id="dot-5" class="dot w-16 h-16 rounded-full bg-gray-600 border-4 border-gray-500 flex items-center justify-center text-white font-bold text-2xl shadow-inner" data-key="6">5</div>
+                        <div id="dot-6" class="dot w-16 h-16 rounded-full bg-gray-600 border-4 border-gray-500 flex items-center justify-center text-white font-bold text-2xl shadow-inner" data-key="3">6</div>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-gray-400 text-sm animate-pulse bg-white/80 px-4 py-1 rounded-full shadow-sm">กดปุ่ม + (Numpad) เพื่อส่งคำตอบ</p>
+        </div>
+
+        <div id="world-ground" class="absolute bottom-0 w-full h-28 bg-green-400 border-t-8 border-green-600 flex items-end px-4 gap-2 overflow-x-auto z-20 shadow-inner"></div>
+    </main>
+
+    <footer class="mt-4 text-center text-gray-500 text-xs">
+        <p>Numpad: 7,4,1 & 9,6,3 | <span class="font-bold text-blue-600">กด + เพื่อส่ง</span> | Esc: ล้างค่า</p>
+    </footer>
+
+    <script>
+        // --- CONFIGURABLE SOUND SETTINGS (Developers/Advanced Users) ---
+        // You can edit these values to change the default sound characteristics
+        const SOUND_SETTINGS = {
+            dot: {
+                frequency: 600, // Starting pitch in Hz (Standard Pop = 600)
+                type: 'sine',   // waveform: 'sine', 'square', 'sawtooth', 'triangle'
+                drop: 300,      // End pitch (frequency drops to this value)
+                duration: 0.1   // Seconds
+            },
+            success: { frequency: 440, type: 'triangle' },
+            error: { frequency: 150, type: 'sawtooth' }
+        };
+
+        const AESOP_FABLES = [
+            { 
+                t: "กระต่ายกับเต่า", 
+                c: "กาลครั้งหนึ่งนานมาแล้ว ณ ป่าใหญ่แห่งหนึ่ง มีกระต่ายตัวหนึ่งมั่นใจในฝีเท้าของตนมาก มันมักจะโอ้อวดว่ามันวิ่งเร็วกว่าใครๆ ในป่า วันหนึ่งมันเห็นเต่ากำลังคลานต้วมเตี้ยมอย่างเชื่องช้า กระต่ายจึงหัวเราะเยาะและท้าวิ่งแข่ง เต่ารับคำท้าด้วยความสงบนิ่ง เมื่อการแข่งขันเริ่มขึ้น กระต่ายวิ่งนำโด่งไปไกลจนลับสายตา เมื่อเห็นว่าเต่ายังอีกไกลกว่าจะตามทัน กระต่ายจึงแวะนอนพักใต้ต้นไม้ใหญ่และเผลอหลับไป ฝ่ายเจ้าเต่าผู้ไม่ย่อท้อ มันยังคงก้าวเดินต่อไปเรื่อยๆ ทีละก้าว ทีละก้าว อย่างสม่ำเสมอ ไม่หยุดพัก จนกระทั่งมันเดินผ่านกระต่ายที่กำลังหลับใหล และเข้าใกล้เส้นชัย กระต่ายสะดุ้งตื่นขึ้นมาก็สายเกินไปเสียแล้ว มันเห็นเต่ากำลังก้าวเข้าเส้นชัยไปต่อหน้าต่อตา เต่าจึงเป็นผู้ชนะในที่สุด นิทานเรื่องนี้สอนให้รู้ว่า ความพยายามอยู่ที่ไหน ความสำเร็จอยู่ที่นั่น และความประมาทเป็นหนทางสู่ความพ่ายแพ้" 
+            },
+            { 
+                t: "ราชสีห์กับหนู", 
+                c: "วันหนึ่งขณะที่ราชสีห์เจ้าป่ากำลังนอนหลับพักผ่อนอยู่นั้น มีหนูตัวน้อยไต่ขึ้นไปวิ่งเล่นบนตัวของมัน ราชสีห์ตื่นขึ้นด้วยความโกรธและตะปบหนูไว้หวังจะกินเป็นอาหาร หนูตัวน้อยร้องขอชีวิตด้วยความหวาดกลัว 'ท่านเจ้าป่า ได้โปรดไว้ชีวิตข้าเถิด หากท่านปล่อยข้าไป วันข้างหน้าข้าอาจได้ตอบแทนบุญคุณท่านบ้าง' ราชสีห์หัวเราะลั่น 'เจ้าตัวเล็กแค่นี้จะทำอะไรให้ข้าได้ แต่เอาเถอะ ข้าจะปล่อยเจ้าไป' หลายวันต่อมา ราชสีห์โชคร้ายติดบ่วงบาศของนายพราน พยายามดิ้นเท่าไหร่ก็ไม่หลุด จึงส่งเสียงคำรามก้องป่า หนูจำเสียงนั้นได้จึงรีบวิ่งมาดู และใช้ฟันอันแหลมคมกัดเชือกบ่วงจนขาด ราชสีห์จึงรอดตายมาได้ นิทานเรื่องนี้สอนให้รู้ว่า อย่าดูถูกผู้ที่ด้อยกว่า และผู้มีเมตตาย่อมได้รับความช่วยเหลือในยามคับขัน" 
+            },
+            { 
+                t: "เด็กเลี้ยงแกะ", 
+                c: "ณ หมู่บ้านแห่งหนึ่ง มีเด็กชายคนหนึ่งทำหน้าที่เลี้ยงแกะอยู่บนเนินเขา ทุกๆ วันเขารู้สึกเบื่อหน่ายที่ต้องเฝ้าแกะเฉยๆ จึงนึกสนุกอยากแกล้งชาวบ้าน เขาจึงวิ่งลงมาตะโกนลั่นหมู่บ้านว่า 'ช่วยด้วย! ช่วยด้วย! หมาป่ามากินแกะแล้ว!' ชาวบ้านได้ยินต่างคว้าอาวุธรีบวิ่งขึ้นเขามาช่วย แต่พอมาถึงกลับไม่เจอหมาป่า เจอแต่เด็กเลี้ยงแกะนั่งหัวเราะชอบใจ ชาวบ้านโมโหแล้วเดินกลับไป เด็กเลี้ยงแกะทำแบบนี้อีกหลายครั้ง จนชาวบ้านเลิกเชื่อถือ วันหนึ่ง หมาป่าตัวจริงโผล่ออกมาไล่กินแกะ เด็กตกใจกลัววิ่งลงมาขอความช่วยเหลือ 'ช่วยด้วย! หมาป่ามาจริงๆ!' แต่คราวนี้ไม่มีใครสนใจ ไม่มีใครเชื่อเขาอีกแล้ว หมาป่าจึงกินแกะจนหมดเกลี้ยง นิทานเรื่องนี้สอนให้รู้ว่า คนที่ชอบพูดโกหก เมื่อถึงคราวพูดความจริงก็จะไม่มีใครเชื่อถือ" 
+            },
+            { 
+                t: "กบเลือกนาย", 
+                c: "ฝูงกบฝูงหนึ่งอาศัยอยู่อย่างอิสระในบึงใหญ่ วันหนึ่งพวกมันรู้สึกว่าการอยู่กันเองไร้ระเบียบ จึงร้องขอต่อเทวดาให้ส่งเจ้านายลงมาปกครอง เทวดาจึงโยนขอนไม้ใหญ่ลงมา ตูม! กบตกใจกลัวในตอนแรก แต่พอนานเข้าเห็นขอนไม้นิ่งเฉย ก็พากันกระโดดขึ้นไปเกาะเล่น และรู้สึกเบื่อหน่ายที่เจ้านายไม่ทำอะไรเลย จึงร้องขอเจ้านายใหม่ที่เก่งกว่านี้ เทวดารำคาญจึงส่งนกกระสาลงมา นกกระสาไล่จิกกินกบทีละตัวๆ จนกบตายเกือบหมดบึง กบที่เหลือรอดจึงสำนึกได้แต่มันก็สายเกินไปเสียแล้ว นิทานเรื่องนี้สอนให้รู้ว่า ความต้องการที่ไม่รู้จักพอ มักนำความเดือดร้อนมาสู่ตนเอง และควรรู้จักพอใจในสิ่งที่ตนมี" 
+            },
+            { 
+                t: "มดกับตั๊กแตน", 
+                c: "ในฤดูร้อนอันอบอุ่น ตั๊กแตนเจ้าสำราญเอาแต่ร้องเพลงเต้นรำอย่างสนุกสนาน ขณะที่ฝูงมดต่างพากันขยันขันแข็งเดินแบกอาหารกลับรังเพื่อตุนไว้สำหรับหน้าหนาว ตั๊กแตนเห็นเข้าก็หัวเราะเยาะ 'พวกเจ้าจะเหนื่อยแรงไปทำไม อาหารมีอยู่เยอะแยะ มาเล่นสนุกกับข้าดีกว่า' มดตอบว่า 'เราต้องเตรียมพร้อม เพราะฤดูหนาวกำลังจะมาถึงแล้ว' ตั๊กแตนไม่สนใจ จนกระทั่งฤดูหนาวมาเยือน อากาศหนาวเหน็บและอาหารหายาก ตั๊กแตนหิวโหยไม่มีอะไรกิน จึงเดินโซซัดโซเซมาเคาะประตูรังมดเพื่อขอแบ่งอาหาร มดถามว่า 'ตอนฤดูร้อนเจ้าทำอะไรอยู่' ตั๊กแตนตอบเสียงอ่อย 'ข้าร้องเพลงและเต้นรำ' มดจึงกล่าวว่า 'ถ้าเช่นนั้น ตอนนี้เจ้าก็ควรจะเต้นรำแก้หนาวไปสิ' แล้วปิดประตู นิทานเรื่องนี้สอนให้รู้ว่า ผู้ที่เกียจคร้านและประมาท ย่อมต้องลำบากในภายหน้า" 
+            },
+            { 
+                t: "สุนัขกับเงา", 
+                c: "สุนัขตัวหนึ่งโชคดีได้ชิ้นเนื้อก้อนโตมา มันคาบเนื้อเดินกลับบ้านอย่างมีความสุข ระหว่างทางต้องเดินข้ามสะพานไม้เล็กๆ เหนือลำธารใส ขณะที่มันเดินอยู่กลางสะพาน มันชะโงกหน้ามองลงไปในน้ำ เห็นเงาของตัวเองสะท้อนอยู่ในน้ำ แต่มันกลับคิดว่าเป็นสุนัขอีกตัวหนึ่งที่คาบเนื้อชิ้นใหญ่กว่าของมัน ด้วยความโลภอยากได้เนื้อชิ้นนั้นด้วย มันจึงอ้าปากเห่ากรรโชกเพื่อจะแย่งเอาเนื้อจากสุนัขในน้ำ ทันใดนั้น เนื้อที่มันคาบอยู่ก็ร่วงหล่นลงไปในน้ำจมหายไป สุนัขตัวนั้นจึงต้องเดินกลับบ้านด้วยความหิวโหยและเสียดาย นิทานเรื่องนี้สอนให้รู้ว่า โลภมาก ลาภหาย และควรรู้จักพอใจในสิ่งที่ตนมี" 
+            },
+            { 
+                t: "หมาจิ้งจอกกับพวงองุ่น", 
+                c: "ในยามบ่ายที่แดดจ้า หมาจิ้งจอกตัวหนึ่งเดินผ่านสวนผลไม้ มันมองเห็นพวงองุ่นสุกงอมสีม่วงเข้มห้อยระย้าอยู่บนเถาวัลย์ที่เลื้อยพันกิ่งไม้สูง 'โอ้โห องุ่นพวกนั้นน่ากินเหลือเกิน มันคงจะหวานฉ่ำแก้กระหายได้ดีแน่ๆ' หมาจิ้งจอกรำพึง มันถอยหลังไปตั้งหลักแล้วกระโดดขึ้นสุดแรง แต่ก็พลาด ไม่ถึงพวงองุ่น มันพยายามกระโดดอีกครั้ง และอีกครั้ง แต่ไม่ว่าจะทำอย่างไรก็เอื้อมไม่ถึงเสียที จนในที่สุดมันก็หมดแรง มันจึงเชิดหน้าขึ้นแล้วเดินจากไป พร้อมกับพูดปลอบใจตัวเองว่า 'โธ่เอ้ย! องุ่นพวกนั้นมันยังไม่สุกดีหรอก สีเขียวปั๊ดแบบนั้น ต้องเปรี้ยวเข็ดฟันแน่ๆ ข้าไม่อยากกินหรอก' นิทานเรื่องนี้สอนให้รู้ว่า คนที่ทำสิ่งใดไม่สำเร็จ มักหาข้ออ้างตำหนิสิ่งนั้นเพื่อกลบเกลื่อนความผิดหวังของตน" 
+            },
+            { 
+                t: "พ่อค้าเกลือกับลา", 
+                c: "พ่อค้าคนหนึ่งบรรทุกกระสอบเกลือหนักอึ้งบนหลังลาเพื่อนำไปขายที่ตลาด ระหว่างทางต้องข้ามลำธาร ลาเกิดลื่นถล่มลงในน้ำ เกลือในกระสอบละลายไปกับน้ำจนหมด เมื่อลุกขึ้นมา ลารู้สึกว่าน้ำหนักบนหลังเบาหวิว มันดีใจมาก วันต่อมา พ่อค้าบรรทุกเกลืออีก ลาแกล้งล้มลงในน้ำอีกเพื่อให้เกลือละลาย พ่อค้ารู้ทันเล่ห์เหลี่ยมของลา วันที่สาม พ่อค้าจึงเปลี่ยนจากเกลือเป็นนุ่นใส่กระสอบจนเต็ม เมื่อถึงลำธาร ลาแกล้งล้มลงไปในน้ำอีกครั้งด้วยความลำพองใจ แต่อนิจจา! นุ่นดูดซับน้ำเข้าไปจนชุ่ม เมื่อลามันลุกขึ้น กระสอบนุ่นจึงหนักอึ้งกว่าเดิมหลายเท่า มันต้องแบกน้ำหนักเดินไปตลอดทางด้วยความยากลำบาก นิทานเรื่องนี้สอนให้รู้ว่า ผู้ที่คิดคดโกง ย่อมได้รับผลกรรมตอบแทนในที่สุด" 
+            },
+            { 
+                t: "เทียนไขแข่งแสง", 
+                c: "ในบ้านหลังหนึ่ง มีเทียนไขเล่มหนึ่งถูกจุดขึ้นเพื่อให้แสงสว่าง แสงของมันสว่างไสวไปทั่วห้อง เทียนไขรู้สึกภูมิใจในตนเองมาก จึงคุยโวโอ้อวดว่า 'แสงของข้านั้นสว่างเจิดจ้าเสียยิ่งกว่าดวงดาว หรือแม้แต่ดวงจันทร์บนท้องฟ้าเสียอีก!' ทันใดนั้น สายลมวูบหนึ่งก็พัดผ่านมาทางหน้าต่าง ไฟที่เปลวเทียนก็ดับวูบลงทันที เจ้าของบ้านเดินเข้ามาจุดเทียนไขใหม่อีกครั้ง แล้วกล่าวสั่งสอนว่า 'เจ้าเทียนไขเอ๋ย จงส่องแสงของเจ้าไปเงียบๆ เถิด อย่าได้อวดตัวไปเลย แสงของเจ้านั้นเพียงแค่ลมพัดเบาๆ ก็ดับแล้ว แต่แสงของดวงจันทร์และดวงดาวนั้น ไม่มีลมใดจะพัดให้ดับได้' นิทานเรื่องนี้สอนให้รู้ว่า ความถ่อมตนย่อมดีกว่าความโอ้อวด และควรสำเหนียกในความสามารถที่แท้จริงของตน" 
+            },
+            { 
+                t: "ห่านกับไข่ทองคำ", 
+                c: "ชาวนาผู้ยากจนคนหนึ่งเลี้ยงห่านไว้ตัวหนึ่ง วันหนึ่งเขาเข้าไปเก็บไข่ในเล้าและต้องประหลาดใจเมื่อพบว่าห่านออกไข่มาเป็นทองคำบริสุทธิ์ เขาดีใจมากและนำไข่ไปขายได้เงินมากมาย เหตุการณ์เป็นเช่นนี้ทุกวัน วันละหนึ่งฟอง จนชาวนาเริ่มร่ำรวยขึ้น แต่ด้วยความโลภที่ไม่มีที่สิ้นสุด เขาคิดว่าในท้องห่านต้องมีไข่ทองคำอยู่มากมายแน่ๆ หากรอวันละฟองมันช้าเกินไป เขาจึงตัดสินใจจับห่านมาผ่าท้อง หวังจะเอาทองคำทั้งหมดออกมาในคราวเดียว แต่เมื่อผ่าท้องออกมา เขากลับพบเพียงความว่างเปล่า เหมือนห่านธรรมดาทั่วไป ไม่มีไข่ทองคำแม้แต่ฟองเดียว และห่านวิเศษตัวนั้นก็ตายลง ชาวนาจึงต้องกลับมายากจนดังเดิม นิทานเรื่องนี้สอนให้รู้ว่า โลภมาก มักลาภหาย" 
+            }
+        ];
+
+        const FULL_DB = [
+            { char: "ก", dots: [1, 2, 4, 5], sound: "กอ ไก่", type: "consonant" },
+            { char: "ข", dots: [1, 3], sound: "ขอ ไข่", type: "consonant" },
+            { char: "ค", dots: [1, 3, 6], sound: "คอ ควาย", type: "consonant" },
+            { char: "ง", dots: [1, 2, 4, 5, 6], sound: "งอ งู", type: "consonant" },
+            { char: "จ", dots: [2, 4, 5], sound: "จอ จาน", type: "consonant" },
+            { char: "ช", dots: [3, 4, 6], sound: "ชอ ช้าง", type: "consonant" },
+            { char: "ซ", dots: [2, 3, 4, 6], sound: "ซอ โซ่", type: "consonant" },
+            { char: "ด", dots: [1, 4, 5], sound: "ดอ เด็ก", type: "consonant" },
+            { char: "ต", dots: [1, 2, 5, 6], sound: "ตอ เต่า", type: "consonant" },
+            { char: "ถ", dots: [2, 3, 4, 5], sound: "ถอ ถุง", type: "consonant" },
+            { char: "ท", dots: [2, 3, 4, 5, 6], sound: "ทอ ทหาร", type: "consonant" },
+            { char: "น", dots: [1, 3, 4, 5], sound: "นอ หนู", type: "consonant" },
+            { char: "บ", dots: [1, 2, 3, 6], sound: "บอ ใบไม้", type: "consonant" },
+            { char: "ป", dots: [1, 2, 3, 4, 6], sound: "ปอ ปลา", type: "consonant" },
+            { char: "ผ", dots: [1, 2, 3, 4], sound: "ผอ ผึ้ง", type: "consonant" },
+            { char: "พ", dots: [1, 4, 5, 6], sound: "พอ พาน", type: "consonant" },
+            { char: "ม", dots: [1, 3, 4], sound: "มอ ม้า", type: "consonant" },
+            { char: "ย", dots: [1, 3, 4, 5, 6], sound: "ยอ ยักษ์", type: "consonant" },
+            { char: "ร", dots: [1, 2, 3, 5], sound: "รอ เรือ", type: "consonant" },
+            { char: "ล", dots: [1, 2, 3], sound: "ลอ ลิง", type: "consonant" },
+            { char: "ว", dots: [2, 4, 5, 6], sound: "วอ แหวน", type: "consonant" },
+            { char: "ส", dots: [2, 3, 4], sound: "สอ เสือ", type: "consonant" },
+            { char: "ห", dots: [1, 2, 5], sound: "หอ หีบ", type: "consonant" },
+            { char: "อ", dots: [1, 3, 5], sound: "ออ อ่าง", type: "consonant" },
+            { char: "ฮ", dots: [1, 2, 3, 4, 5, 6], sound: "ฮอ นกฮูก", type: "consonant" },
+            // สระ
+            { char: "ะ", dots: [1], sound: "สระ อะ", type: "vowel" },
+            { char: "า", dots: [1, 6], sound: "สระ อา", type: "vowel" },
+            { char: "ิ", dots: [1, 2], sound: "สระ อิ", type: "vowel" },
+            { char: "ี", dots: [2, 3], sound: "สระ อี", type: "vowel" },
+            { char: "ุ", dots: [1, 4], sound: "สระ อุ", type: "vowel" },
+            { char: "เออ", dots: [1, 4, 6], sound: "สระ เออ", type: "vowel" }
+        ];
+
+        const HELP_MESSAGES_STAGE_1 = [
+            "วางนิ้วชี้ไว้ที่ปุ่มเลข 4 และเลข 6 นะครับ",
+            "ลองกดปุ่มดูนะครับ ไม่ต้องกลัวผิด",
+            "คนเก่งลองกดดูหน่อยนะ",
+            "สู้ๆ ครับ",
+            "วางมือซ้ายที่ 7 4 1 และมือขวาที่ 9 6 3 นะครับ"
+        ];
+
+        const HELP_MESSAGES_STAGE_2 = [
+            "น้องเงียบไปเลย ยังอยู่ไหมเอ่ย",
+            "กดปุ่มเครื่องหมายบวก เพื่อส่งคำตอบนะครับ",
+            "มั่นใจหน่อยครับ กดเลย",
+            "ถ้าลืมว่าต้องกดอะไร ฟังโจทย์อีกครั้งไหมครับ"
+        ];
+
+        class BrailleApp {
+            constructor() {
+                this.currentDots = new Set();
+                this.mode = 'simultaneous';
+                this.gameLevel = 1;
+                this.questionIndex = 0;
+                this.currentSet = [];
+                this.isGameActive = false;
+                this.studentName = "";
+                this.soundConfig = { ...SOUND_SETTINGS.dot }; // Internal state for live updates
+                
+                this.idleStage1 = null;
+                this.idleStage2 = null;
+
+                this.STAGE1_DELAY = 2000; 
+                this.STAGE2_DELAY = 7000; 
+
+                this.keyMap = {
+                    'Numpad7': 1, 'Digit7': 1, 'KeyS': 1,
+                    'Numpad4': 2, 'Digit4': 2, 'KeyD': 2,
+                    'Numpad1': 3, 'Digit1': 3, 'KeyF': 3,
+                    'Numpad9': 4, 'Digit9': 4, 'KeyJ': 4,
+                    'Numpad6': 5, 'Digit6': 5, 'KeyK': 5,
+                    'Numpad3': 6, 'Digit3': 6, 'KeyL': 6
+                };
+
+                this.setupEventListeners();
+            }
+
+            // --- Settings UI Logic ---
+            toggleSettings() {
+                const panel = document.getElementById('settings-panel');
+                panel.classList.toggle('closed');
+            }
+
+            updateSoundConfig(key, value) {
+                if(key === 'dotFreq') {
+                    this.soundConfig.frequency = parseInt(value);
+                    this.soundConfig.drop = parseInt(value) / 2;
+                    document.getElementById('dot-pitch-val').innerText = value + 'Hz';
+                }
+            }
+
+            setWaveform(type) {
+                this.soundConfig.type = type;
+                this.playSound('dot');
+            }
+
+            async prepareGame() {
+                const nameInput = document.getElementById('student-name');
+                this.studentName = nameInput.value.trim() || "คนเก่ง";
+                document.getElementById('display-name').innerText = this.studentName;
+
+                this.announceToNVDA("กำลังเตรียมเกม อีก 3 วินาที");
+
+                const startBtn = document.querySelector('#welcome-screen button');
+                startBtn.disabled = true;
+                startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังโหลด...';
+
+                await new Promise(r => setTimeout(r, 1000));
+                this.playSound('dot'); 
+                await new Promise(r => setTimeout(r, 1000));
+                this.playSound('dot'); 
+                await new Promise(r => setTimeout(r, 1000));
+                
+                document.getElementById('welcome-screen').classList.add('hidden');
+                this.startGame();
+            }
+
+            resetToMenu() {
+                this.isGameActive = false;
+                this.clearIdleTimers();
+                document.getElementById('game-over-screen').classList.add('hidden');
+                document.getElementById('welcome-screen').classList.remove('hidden');
+                
+                const startBtn = document.querySelector('#welcome-screen button');
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-play mr-2"></i> เริ่มเกมส์ (ครูกดปุ่มนี้)';
+                
+                this.announceToNVDA("กลับสู่เมนูหลัก");
+            }
+
+            startGame() {
+                this.gameLevel = 1;
+                this.questionIndex = 0;
+                this.currentDots.clear();
+                this.isGameActive = true;
+                
+                document.getElementById('world-ground').innerHTML = '';
+                document.getElementById('game-over-screen').classList.add('hidden');
+
+                this.currentSet = this.shuffleArray([...FULL_DB]).slice(0, 5);
+                
+                const greeting = `สวัสดีครับน้อง ${this.studentName}, เริ่มด่านที่ 1 ระบบจะบอกจุดให้นะครับ`;
+                this.announceToNVDA(greeting);
+                
+                this.renderLevelUI();
+                setTimeout(() => {
+                    this.renderTarget();
+                    this.resetIdleTimers(); 
+                }, 2000);
+            }
+
+            // --- Idle Helper ---
+            clearIdleTimers() {
+                if (this.idleStage1) clearTimeout(this.idleStage1);
+                if (this.idleStage2) clearTimeout(this.idleStage2);
+            }
+
+            resetIdleTimers() {
+                this.clearIdleTimers();
+                if (!this.isGameActive) return;
+
+                this.idleStage1 = setTimeout(() => this.triggerIdleStage1(), this.STAGE1_DELAY);
+                this.idleStage2 = setTimeout(() => this.triggerIdleStage2(), this.STAGE2_DELAY);
+            }
+
+            triggerIdleStage1() {
+                if (!this.isGameActive) return;
+                const target = this.currentSet[this.questionIndex];
+                const showHint = (Math.random() > 0.5) && (this.gameLevel === 1);
+
+                if (showHint) {
+                    this.announceToNVDA(`อย่าลืมนะครับ ${target.sound} ใช้จุด ${target.dots.join(" ")}`);
+                } else {
+                    const msg = HELP_MESSAGES_STAGE_1[Math.floor(Math.random() * HELP_MESSAGES_STAGE_1.length)];
+                    this.announceToNVDA(msg);
+                }
+            }
+
+            triggerIdleStage2() {
+                if (!this.isGameActive) return;
+                this.playSound('bell');
+                setTimeout(() => {
+                     const msg = HELP_MESSAGES_STAGE_2[Math.floor(Math.random() * HELP_MESSAGES_STAGE_2.length)];
+                     this.announceToNVDA(msg);
+                }, 1000);
+            }
+
+            // --- Logic ---
+            shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+
+            checkAnswer() {
+                if (!this.isGameActive || this.currentDots.size === 0) return;
+                this.resetIdleTimers();
+
+                const target = this.currentSet[this.questionIndex];
+                const currentArr = Array.from(this.currentDots).sort((a, b) => a - b);
+                const targetArr = [...target.dots].sort((a, b) => a - b);
+                
+                if (JSON.stringify(currentArr) === JSON.stringify(targetArr)) {
+                    this.handleSuccess(target);
+                } else {
+                    this.handleFailure();
+                }
+            }
+
+            handleSuccess(target) {
+                this.playSound('success');
+                const msg = `ถูกต้อง! ${target.sound}`;
+                this.showPopup(msg);
+                this.announceToNVDA(msg);
+                this.addWorldItem(target.type);
+
+                this.clearIdleTimers(); 
+
+                setTimeout(() => {
+                    this.hidePopup();
+                    this.resetDots();
+                    this.questionIndex++;
+
+                    if (this.questionIndex >= 5) {
+                        if (this.gameLevel === 1) {
+                            this.gameLevel = 2;
+                            this.questionIndex = 0;
+                            this.renderLevelUI();
+                            this.playSound('applause'); 
+                            this.announceToNVDA("ผ่านด่าน 1 แล้ว เก่งมาก! ต่อไปด่านที่ 2 ทดสอบความจำ ไม่บอกจุดนะครับ");
+                            setTimeout(() => {
+                                this.renderTarget();
+                                this.resetIdleTimers();
+                            }, 5000);
+                        } else {
+                            this.finishGame();
+                        }
+                    } else {
+                        this.renderLevelUI();
+                        this.renderTarget();
+                        this.resetIdleTimers();
+                    }
+                }, 2000);
+            }
+
+            finishGame() {
+                this.isGameActive = false;
+                this.clearIdleTimers();
+                this.playSound('applause');
+
+                const randomFable = AESOP_FABLES[Math.floor(Math.random() * AESOP_FABLES.length)];
+
+                const gameOverScreen = document.getElementById('game-over-screen');
+                document.getElementById('story-title').innerText = randomFable.t;
+                document.getElementById('story-content').innerText = randomFable.c;
+                
+                gameOverScreen.classList.remove('hidden');
+
+                setTimeout(() => {
+                    const storyScript = `จบเกมแล้วครับ น้อง${this.studentName}เก่งมากๆ. รางวัลของคนเก่งคือ นิทานเรื่อง ${randomFable.t}. ${randomFable.c}. กด Spacebar เพื่อเล่นใหม่ครับ`;
+                    this.announceToNVDA(storyScript);
+                }, 1500); 
+            }
+
+            handleFailure() {
+                this.playSound('error');
+                // เพิ่มการล้างค่า (Reset Dots) ทันทีเมื่อตอบผิด
+                this.resetDots(); 
+                this.announceToNVDA("ผิดครับ ลองใหม่อีกครั้ง");
+                this.resetIdleTimers();
+            }
+
+            // --- Rendering ---
+            renderLevelUI() {
+                const badge = document.getElementById('level-badge');
+                if (this.gameLevel === 1) {
+                    badge.innerText = "Level 1: ฝึกฝน (บอกจุด)";
+                    badge.className = "text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full";
+                } else {
+                    badge.innerText = "Level 2: ทดสอบ (ไม่บอกจุด)";
+                    badge.className = "text-xs font-normal text-white bg-red-600 px-2 py-0.5 rounded-full";
+                }
+                document.getElementById('progress-text').innerText = `${this.questionIndex + 1} / 5`;
+            }
+
+            renderTarget() {
+                const target = this.currentSet[this.questionIndex];
+                document.getElementById('target-char').innerText = target.char;
+                const hintContainer = document.getElementById('target-braille-hint');
+                hintContainer.innerHTML = '';
+
+                let announceText = `โจทย์ ${target.sound}`;
+
+                if (this.gameLevel === 1) {
+                    hintContainer.style.opacity = '1';
+                    announceText += ` จุด ${target.dots.join(" ")}`;
+                    [1,2,3,4,5,6].forEach(d => {
+                        const isActive = target.dots.includes(d);
+                        const dot = document.createElement('div');
+                        dot.className = `w-4 h-4 rounded-full border border-gray-400 ${isActive ? 'bg-gray-800' : 'bg-white'}`;
+                        hintContainer.appendChild(dot);
+                    });
+                } else {
+                    hintContainer.style.opacity = '0';
+                    announceText += ` ... เชิญพิมพ์ครับ`;
+                }
+
+                this.announceToNVDA(announceText);
+            }
+
+            // --- Input & System ---
+            handleInput(code, isKeyDown) {
+                if (!document.getElementById('welcome-screen').classList.contains('hidden')) return;
+
+                if (!this.isGameActive) {
+                    if (code === 'Space' && !isKeyDown && !document.getElementById('game-over-screen').classList.contains('hidden')) {
+                        this.startGame();
+                    }
+                    return;
+                }
+
+                this.resetIdleTimers(); 
+
+                // Check for NumpadAdd (Submit)
+                if (code === 'NumpadAdd' || code === 'Equal') { // Allow both Numpad+ and standard +
+                    if (!isKeyDown) this.checkAnswer();
+                    return;
+                }
+
+                const dot = this.keyMap[code];
+                if (!dot) {
+                    if (code === 'Escape') {
+                        this.resetDots();
+                        this.announceToNVDA("ล้างค่า");
+                    }
+                    return;
+                }
+
+                if (isKeyDown) {
+                    if (this.currentDots.has(dot)) {
+                        this.currentDots.delete(dot);
+                        this.announceToNVDA("ลบ " + dot); 
+                    } else {
+                        this.currentDots.add(dot);
+                        this.playSound('dot');
+                        this.announceToNVDA(dot.toString());
+                    }
+                    this.updateVisualDots();
+                }
+            }
+
+            resetDots() {
+                this.currentDots.clear();
+                this.updateVisualDots();
+            }
+
+            updateVisualDots() {
+                document.querySelectorAll('.dot').forEach(el => el.classList.remove('active'));
+                this.currentDots.forEach(dot => {
+                    const el = document.getElementById(`dot-${dot}`);
+                    if(el) el.classList.add('active');
+                });
+            }
+
+            announceToNVDA(text) {
+                const sr = document.getElementById('sr-announcer');
+                sr.textContent = ''; 
+                setTimeout(() => { sr.textContent = text; }, 50);
+            }
+
+            showPopup(text) {
+                const popup = document.getElementById('message-popup');
+                document.getElementById('popup-text').innerText = text;
+                popup.classList.remove('hidden');
+            }
+
+            hidePopup() {
+                document.getElementById('message-popup').classList.add('hidden');
+            }
+
+            addWorldItem(type) {
+                const container = document.getElementById('world-ground');
+                const item = document.createElement('div');
+                item.className = 'world-item text-6xl mb-1 filter drop-shadow-lg';
+                if (type === 'consonant') {
+                    const trees = ['🌳', '🌲', '🌴', '🌵', '🍄'];
+                    item.innerText = trees[Math.floor(Math.random() * trees.length)];
+                } else {
+                    const decor = ['🏠', '🏡', '🏫', '🌻', '🚗', '⛺'];
+                    item.innerText = decor[Math.floor(Math.random() * decor.length)];
+                }
+                container.appendChild(item);
+                container.scrollLeft = container.scrollWidth;
+            }
+
+            playSound(type) {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                if (type === 'dot') {
+                    // Use configurable sound settings
+                    osc.type = this.soundConfig.type;
+                    osc.frequency.setValueAtTime(this.soundConfig.frequency, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(this.soundConfig.drop, ctx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.1);
+                } 
+                else if (type === 'success') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(440, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.3);
+                } 
+                else if (type === 'error') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, ctx.currentTime);
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.2);
+                } 
+                else if (type === 'levelup') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(300, ctx.currentTime);
+                    osc.frequency.linearRampToValueAtTime(600, ctx.currentTime + 0.2);
+                    osc.frequency.linearRampToValueAtTime(900, ctx.currentTime + 0.4);
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.6);
+                } 
+                else if (type === 'bell') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1200, ctx.currentTime); 
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 1.5);
+                } 
+                else if (type === 'applause') {
+                    const duration = 2.0;
+                    const bufferSize = ctx.sampleRate * duration;
+                    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+                    }
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = buffer;
+                    const filter = ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 1000;
+                    noise.connect(filter);
+                    filter.connect(gain);
+                    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
+                    noise.start();
+                }
+            }
+
+            setupEventListeners() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.repeat) return;
+                    this.handleInput(e.code, true);
+                });
+                document.addEventListener('keyup', (e) => this.handleInput(e.code, false));
+            }
+        }
+
+        const app = new BrailleApp();
+    </script>
+</body>
+</html>
